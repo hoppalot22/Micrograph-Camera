@@ -63,15 +63,20 @@ class MainWindow():
         self.captureButton.grid(row = 1, column = self.columnSpan + 4)
         
     def Mag1(self):
-        self.scale = "5x"            
+        self.scale = "5x"
+        self.magLabel.configure(text=self.scale)
     def Mag2(self):
-        self.scale = "10x"  
+        self.scale = "10x"
+        self.magLabel.configure(text=self.scale)
     def Mag3(self):
-        self.scale = "20x"  
+        self.scale = "20x"
+        self.magLabel.configure(text=self.scale)
     def Mag4(self):
-        self.scale = "50x"  
+        self.scale = "50x"
+        self.magLabel.configure(text=self.scale)
     def Mag5(self):
         self.scale = "100x"
+        self.magLabel.configure(text=self.scale)
     def Custom(self):
         try:
             self.scale = int(self.customForm.get())
@@ -94,8 +99,11 @@ class MainWindow():
 # Define function to show frame
     
     def CaptureImage(self):
+        if not os.path.exists(f"{self.CURR_DIR}//captures"):
+            os.mkdir(f"{self.CURR_DIR}//captures")
         if not self.refresh:
-            self.img.save(f"{self.CURR_DIR}//captures/{self.imgName}")
+            self.img.save(f"{self.CURR_DIR}//captures/{self.imgName}.jpg")
+            self.captureButton.configure(text="Capture")
             self.refresh = True
             self.show_frames()
         else:
@@ -130,9 +138,8 @@ class MainWindow():
         self.img = Image.fromarray(cv2image)
 
         # Convert image to PhotoImage
-        imgtk = ImageTk.PhotoImage(image = self.img)
-        self.img = imgtk
-        self.camLabel.configure(image=imgtk)
+        self.imgtk = ImageTk.PhotoImage(image = self.img)
+        self.camLabel.configure(image=self.imgtk)
         # Repeat after an interval to capture continiously
         if(self.refresh):
             self.camLabel.after(20, self.show_frames)
