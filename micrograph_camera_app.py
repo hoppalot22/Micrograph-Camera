@@ -1,18 +1,27 @@
 # Import required Libraries
 import tkinter as tk
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 import cv2
 from tkinter import ttk
 import sys
 import os
-
+import enum
+import math
 
 
 # Create an instance of TKinter Window or frame
+
+class State(enum.Enum):
+    default = 0
+    measuring = 1
+    calibrating = 2
 class MainWindow():
     def __init__(self):
-    
+
+
+        self.knownDistLabel = None
+        self.knownDistForm = None
         if getattr(sys, 'frozen', False):
             # If the application is run as a bundle, the PyInstaller bootloader
             # extends the sys module by a flag frozen=True and sets the app 
@@ -21,25 +30,70 @@ class MainWindow():
         else:
             self.CURR_DIR = os.path.dirname(os.path.abspath(__file__))
         
+        if not os.path.exists(f"{self.CURR_DIR}//captures"):
+            os.mkdir(f"{self.CURR_DIR}//captures")
+
+
+
         self.rowSpan = 20
-        self.columnSpan = 5        
+        self.columnSpan = 10
         
-        #Create window
+        #Create window and bind events
         self.win = tk.Tk()
+        self.win.title("MicroGrpah Camera App")
+
+        self.win.bind("<Button-1>", self.onLeftClick)
+        self.win.bind("<Button-3>", self.onRightClick)
+        self.win.bind("<B1-Motion>", self.onMouseDrag)
+        self.win.bind("<ButtonRelease-1>", self.onLeftClickRelease)
+
+        #Create "Global" variables
+
         self.scale = "5x"
         self.imgName = "sample"
+        self.imageBounds = [0,0,0,0]
+        self.point1 = (0,0)
+        self.point2 = (0,0)
+        self.showLine = False
+        self.pix2dist = 1
+        self.state = State.default
         self.scaleImage = (np.ones((20,160, 3), np.uint8)*255)
         self.magLabel = tk.Label(self.win, text = self.scale)
         self.magLabel.grid(row = self.rowSpan, column = 1)
+        self.calibrations = {
+            "5x" : 1,
+            "10x": .5,
+            "20x": 0.25,
+            "50x": 0.1,
+            "100x": 0.05,
+        }
         
-        # Create a Label to capture the Video frames
+        # Create a Label to capture the Video frames add some widgets
         self.refresh = True
         self.camLabel = tk.Label(self.win)
         self.camLabel.grid(row=0, column=0, columnspan = self.columnSpan, rowspan = self.rowSpan)
+        self.distLabel = tk.Label(self.win, text="Dist:")
+        self.distLabel.grid(row = self.rowSpan, column=2)
         self.cameras = self.returnCameraIndexes()
         self.cameraDropdown = ttk.Combobox(self.win, values = self.cameras)
         self.cameraDropdown.bind("<<ComboboxSelected>>", self.onCameraChange)
         self.cameraDropdown.grid(row = self.rowSpan, column = 0)
+
+        self.repLabel = tk.Label(self.win, text="Rep number")
+        self.metalLabel = tk.Label(self.win, text="Microstructure Region")
+        self.detailLabel = tk.Label(self.win, text="Additional details")
+        self.savePathLabel = tk.Label(self.win,text=f"Saving to:\n{self.CURR_DIR}\\captures")
+        self.repLabel.grid(row = 3, column=self.columnSpan+2)
+        self.metalLabel.grid(row=3, column=self.columnSpan + 3)
+        self.detailLabel.grid(row=3, column=self.columnSpan + 4)
+        self.savePathLabel.grid(row=5, column=self.columnSpan, columnspan=4)
+
+        self.repNumBox = tk.Entry(self.win)
+        self.repNumBox.grid(row = 4, column = self.columnSpan+2)
+        self.metalSelectBox = ttk.Combobox(self.win, values = ["Parent Metal", "Weld Metal", "Coarse HAZ", "Fine HAZ"])
+        self.metalSelectBox.grid(row = 4, column = self.columnSpan+3)
+        self.extraDetailBox = tk.Entry(self.win)
+        self.extraDetailBox.grid(row = 4, column = self.columnSpan+4)
         self.cap = cv2.VideoCapture(0)
         self.updateScale()
         
@@ -49,40 +103,116 @@ class MainWindow():
         self.mag3 = ttk.Button(self.win, text = "20x", command = self.Mag3)
         self.mag4 = ttk.Button(self.win, text = "50x", command = self.Mag4)
         self.mag5 = ttk.Button(self.win, text = "100x", command = self.Mag5)
-        #self.custom = ttk.Button(self.win, text = "Custom", command = self.Custom)
-        #self.customForm = ttk.Entry(self.win)
         self.captureButton = ttk.Button(self.win, text = "Capture", command = self.CaptureImage)
+        self.calibrateButton = ttk.Button(self.win, text = f"Calibrate {self.scale}", command=self.Calibrate)
+        self.MeasureButton = ttk.Button(self.win, text="Measure", command=self.Measure)
         
         self.mag1.grid(row = 0, column = self.columnSpan)
         self.mag2.grid(row = 0, column = self.columnSpan + 1)
         self.mag3.grid(row = 0, column = self.columnSpan + 2)
         self.mag4.grid(row =0, column = self.columnSpan + 3)
         self.mag5.grid(row = 0, column = self.columnSpan + 4)
-        #self.custom.grid(row = 5, column = 10)
-        #self.customForm.grid(row = 6, column = 5)
         self.captureButton.grid(row = 1, column = self.columnSpan + 4)
+        self.calibrateButton.grid(row=1, column=self.columnSpan + 3)
+        self.MeasureButton.grid(row=1, column=self.columnSpan + 2)
         
     def Mag1(self):
         self.scale = "5x"
         self.magLabel.configure(text=self.scale)
+        if not (self.knownDistForm is None):
+            self.knownDistForm.destroy()
+            self.knownDistLabel.destroy()
+        self.calibrateButton.configure(text=f"Calibrate {self.scale}")
     def Mag2(self):
         self.scale = "10x"
         self.magLabel.configure(text=self.scale)
+        if not (self.knownDistForm is None):
+            self.knownDistForm.destroy()
+            self.knownDistLabel.destroy()
+        self.calibrateButton.configure(text=f"Calibrate {self.scale}")
     def Mag3(self):
         self.scale = "20x"
         self.magLabel.configure(text=self.scale)
+        if not (self.knownDistForm is None):
+            self.knownDistForm.destroy()
+            self.knownDistLabel.destroy()
+        self.calibrateButton.configure(text=f"Calibrate {self.scale}")
     def Mag4(self):
         self.scale = "50x"
         self.magLabel.configure(text=self.scale)
+        if not (self.knownDistForm is None):
+            self.knownDistForm.destroy()
+            self.knownDistLabel.destroy()
+        self.calibrateButton.configure(text=f"Calibrate {self.scale}")
     def Mag5(self):
         self.scale = "100x"
         self.magLabel.configure(text=self.scale)
-    def Custom(self):
-        try:
-            self.scale = int(self.customForm.get())
-        except Exception as e:
-            print(e)
-        
+        if not (self.knownDistForm is None):
+            self.knownDistForm.destroy()
+            self.knownDistLabel.destroy()
+        self.calibrateButton.configure(text=f"Calibrate {self.scale}")
+
+    def getLinePixDist(self):
+        return round(math.sqrt((self.point2[0]-self.point1[0])*(self.point2[0]-self.point1[0]) + (self.point2[1]-self.point1[1])*(self.point2[1]-self.point1[1])))
+    def Calibrate(self):
+        if not (self.state == State.calibrating):
+            self.state = State.calibrating
+            self.calibrateButton.configure(text="Finish")
+            self.MeasureButton.configure(text="Measure")
+            self.knownDistLabel = tk.Label(self.win, text="Enter Known Distance \nIn Micrometers")
+            self.knownDistForm = tk.Entry(self.win)
+            self.knownDistLabel.grid(row = 2, column=self.columnSpan + 2)
+            self.knownDistForm.grid(row = 2, column=self.columnSpan + 3)
+        else:
+            try:
+                self.calibrations[self.scale] = round(float(self.knownDistForm.get())/self.getLinePixDist(),2)
+                self.distLabel.configure(text=f"Calibration Success {self.calibrations[self.scale]} Micrometers per pixel at {self.scale} Magnification")
+            except Exception as e:
+                print(e, self.point1, self.point2)
+                self.distLabel.configure(text=f"Calibration Failed")
+            self.state = State.default
+            self.showLine = False
+            self.knownDistForm.destroy()
+            self.knownDistLabel.destroy()
+            self.calibrateButton.configure(text=f"Calibrate {self.scale}")
+
+    def Measure(self):
+        if not (self.state == State.measuring):
+            self.state = State.measuring
+            self.MeasureButton.configure(text="Finish")
+            self.calibrateButton.configure(text=f"Calibrate {self.scale}")
+        else:
+            self.state = State.default
+            self.MeasureButton.configure(text="Measure")
+            self.showLine = False
+
+    def onLeftClick(self,event):
+
+        self.imageBounds = [self.camLabel.winfo_x()+1, self.camLabel.winfo_y()+1, self.camLabel.winfo_x()-1+self.camLabel.winfo_width(), self.camLabel.winfo_y()-1+self.camLabel.winfo_height()]
+        if not ((self.imageBounds[0] < event.x < self.imageBounds[2]) and (self.imageBounds[1] < event.y < self.imageBounds[3])):
+            return
+
+        if not(str(event.widget) == r".!label2"):
+            return
+
+        if self.state == State.measuring or self.state == State.calibrating:
+            self.point1 = (event.x, event.y)
+            self.point2 = (event.x, event.y)
+            self.showLine = True
+
+    def onLeftClickRelease(self,event):
+        if self.state == State.measuring or self.state == State.calibrating:
+            self.distLabel.configure(text = f"Dist: {round(self.getLinePixDist()*self.calibrations[self.scale],2)} micrometers ({self.getLinePixDist()} pixels)")
+
+    def onRightClick(self,event):
+        self.showLine = False
+
+    def onMouseDrag(self,event):
+        if not ((self.imageBounds[0] < event.x < self.imageBounds[2]) and (self.imageBounds[1] < event.y < self.imageBounds[3])):
+            return
+        if self.state == State.measuring or self.state == State.calibrating:
+            self.point2 = (event.x, event.y)
+
     def updateScale(self):
       
         mag2scaleDist = {
@@ -99,10 +229,24 @@ class MainWindow():
 # Define function to show frame
     
     def CaptureImage(self):
-        if not os.path.exists(f"{self.CURR_DIR}//captures"):
-            os.mkdir(f"{self.CURR_DIR}//captures")
+
+        metalAbbreviations = {
+            "Weld Metal" : "WM",
+            "Parent Metal": "PM",
+            "Coarse HAZ": "CGHAZ",
+            "Fine HAZ": "FGHAZ"
+        }
+
         if not self.refresh:
-            self.img.save(f"{self.CURR_DIR}//captures/{self.imgName}.jpg")
+            try:
+                savePath = f"{self.CURR_DIR}\\captures\\R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
+                if savePath[-5] == '-':
+                    savePath = savePath[0:-5] + ".jpg"
+            except Exception as e:
+                self.savePathLabel.configure(f"Error saving file \n{e}")
+
+            self.savePathLabel.configure(text=f"Saved to: \n {savePath}")
+            self.img.save(savePath)
             self.captureButton.configure(text="Capture")
             self.refresh = True
             self.show_frames()
@@ -135,7 +279,9 @@ class MainWindow():
         w, h, d = self.scaleImage.shape
        
         cv2image[-1*(w):,-1*(h):, :] = self.scaleImage
-        self.img = Image.fromarray(cv2image)
+        self.img = Image.fromarray(cv2image).resize([1000,800])
+        if self.showLine:
+            ImageDraw.Draw(self.img).line([self.point1,self.point2], fill=0, width = 5)
 
         # Convert image to PhotoImage
         self.imgtk = ImageTk.PhotoImage(image = self.img)
