@@ -1,9 +1,9 @@
 # Import required Libraries
 import tkinter as tk
 import numpy as np
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 import cv2
-from tkinter import ttk
+from tkinter import ttk, filedialog
 import sys
 import os
 import enum
@@ -29,9 +29,6 @@ class MainWindow():
             self.CURR_DIR= os.path.abspath(".")#sys._MEIPASS
         else:
             self.CURR_DIR = os.path.dirname(os.path.abspath(__file__))
-        
-        if not os.path.exists(f"{self.CURR_DIR}//captures"):
-            os.mkdir(f"{self.CURR_DIR}//captures")
 
 
 
@@ -40,7 +37,7 @@ class MainWindow():
         
         #Create window and bind events
         self.win = tk.Tk()
-        self.win.title("MicroGrpah Camera App")
+        self.win.title("MicroGraph Camera App")
 
         self.win.bind("<Button-1>", self.onLeftClick)
         self.win.bind("<Button-3>", self.onRightClick)
@@ -48,7 +45,7 @@ class MainWindow():
         self.win.bind("<ButtonRelease-1>", self.onLeftClickRelease)
 
         #Create "Global" variables
-
+        self.saveDir = ''
         self.scale = "5x"
         self.imgName = "sample"
         self.imageBounds = [0,0,0,0]
@@ -95,7 +92,6 @@ class MainWindow():
         self.extraDetailBox = tk.Entry(self.win)
         self.extraDetailBox.grid(row = 4, column = self.columnSpan+4)
         self.cap = cv2.VideoCapture(0)
-        self.updateScale()
         
         #Buttons
         self.mag1 = ttk.Button(self.win, text = "5x", command = self.Mag1)
@@ -106,6 +102,7 @@ class MainWindow():
         self.captureButton = ttk.Button(self.win, text = "Capture", command = self.CaptureImage)
         self.calibrateButton = ttk.Button(self.win, text = f"Calibrate {self.scale}", command=self.Calibrate)
         self.MeasureButton = ttk.Button(self.win, text="Measure", command=self.Measure)
+        self.saveToButton = ttk.Button(self.win, text="SaveTo...", command=self.FileDialog)
         
         self.mag1.grid(row = 0, column = self.columnSpan)
         self.mag2.grid(row = 0, column = self.columnSpan + 1)
@@ -115,6 +112,7 @@ class MainWindow():
         self.captureButton.grid(row = 1, column = self.columnSpan + 4)
         self.calibrateButton.grid(row=1, column=self.columnSpan + 3)
         self.MeasureButton.grid(row=1, column=self.columnSpan + 2)
+        self.saveToButton.grid(row = 1, column = self.columnSpan + 1)
         
     def Mag1(self):
         self.scale = "5x"
@@ -152,6 +150,10 @@ class MainWindow():
             self.knownDistLabel.destroy()
         self.calibrateButton.configure(text=f"Calibrate {self.scale}")
 
+
+    def FileDialog(self):
+        self.saveDir = filedialog.askdirectory()
+        self.savePathLabel.configure(text=f"Save Directory: \n {self.saveDir}")
     def getLinePixDist(self):
         return round(math.sqrt((self.point2[0]-self.point1[0])*(self.point2[0]-self.point1[0]) + (self.point2[1]-self.point1[1])*(self.point2[1]-self.point1[1])))
     def Calibrate(self):
@@ -213,19 +215,6 @@ class MainWindow():
         if self.state == State.measuring or self.state == State.calibrating:
             self.point2 = (event.x, event.y)
 
-    def updateScale(self):
-      
-        mag2scaleDist = {
-        5 : 500,
-        10: 200,
-        20: 100,
-        50: 20,
-        100: 20,
-        }
-        
-        
-
-
 # Define function to show frame
     
     def CaptureImage(self):
@@ -236,17 +225,19 @@ class MainWindow():
             "Coarse HAZ": "CGHAZ",
             "Fine HAZ": "FGHAZ"
         }
-
+        if self.saveDir == '':
+            self.savePathLabel.configure(text="Please choose a save directory before capturing image")
+            return
         if not self.refresh:
             try:
-                savePath = f"{self.CURR_DIR}\\captures\\R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
+                savePath = f"{self.saveDir}/R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
                 if savePath[-5] == '-':
                     savePath = savePath[0:-5] + ".jpg"
+                self.savePathLabel.configure(text=f"Saved to: \n {savePath}")
+                self.img.save(savePath)
             except Exception as e:
                 self.savePathLabel.configure(f"Error saving file \n{e}")
 
-            self.savePathLabel.configure(text=f"Saved to: \n {savePath}")
-            self.img.save(savePath)
             self.captureButton.configure(text="Capture")
             self.refresh = True
             self.show_frames()
@@ -274,12 +265,29 @@ class MainWindow():
         return arr
 
     def show_frames(self):
+
+        mag2scaleDist = {
+        "5x" : 500,
+        "10x": 200,
+        "20x": 100,
+        "50x": 20,
+        "100x": 20,
+        }
         # Get the latest frame and convert into Image
         cv2image = cv2.cvtColor(self.cap.read()[1],cv2.COLOR_BGR2RGB)
-        w, h, d = self.scaleImage.shape
+        self.img = Image.fromarray(cv2image).resize((1000, 800))
+        scaleImgArray = np.ones((20,round(mag2scaleDist[self.scale]/self.calibrations[self.scale]), 3), np.uint8)*255
+        scaleImgArray[:,0:2] = 0
+        scaleImgArray[:, -3:-1] = 0
+        self.scaleImage = Image.fromarray(scaleImgArray)
+
+        ImageDraw.Draw(self.scaleImage).text((round(mag2scaleDist[self.scale]/self.calibrations[self.scale]/2 - 50), 5), f"{str(mag2scaleDist[self.scale])} Micrometers", (0,0,0))
+
+        w = self.scaleImage.width
+        h = self.scaleImage.height
        
-        cv2image[-1*(w):,-1*(h):, :] = self.scaleImage
-        self.img = Image.fromarray(cv2image).resize([1000,800])
+        self.img.paste(self.scaleImage, (self.img.width - w, self.img.height - h))
+
         if self.showLine:
             ImageDraw.Draw(self.img).line([self.point1,self.point2], fill=0, width = 5)
 
