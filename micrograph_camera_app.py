@@ -33,17 +33,12 @@ class MainWindow:
 
         if os.path.exists(f"{self.CURR_DIR}\\cals"):
             self.init_text = "Calibration Labels read from 'cals' file"
+            self.calibrations = {}
             with open(f"{self.CURR_DIR}\\cals") as cal_file:
                 calList = []
                 for line in cal_file.readlines():
-                    calList.append(float(line.split("=")[1]))
-                self.calibrations = {
-                    "5x": calList[0],
-                    "10x": calList[1],
-                    "20x": calList[2],
-                    "50x": calList[3],
-                    "100x": calList[4],
-                }
+                    calList.append(line.split("="))
+                    self.calibrations[calList[-1][0]] = float(calList[-1][1])
         else:
             self.init_text = "Calibrations not read from file, using default values, cals file has been created"
             self.calibrations = {
@@ -68,6 +63,8 @@ class MainWindow:
         self.win.bind("<ButtonRelease-1>", self.onLeftClickRelease)
 
         # Create "Global" variables
+        self.screenShape = [self.win.winfo_screenwidth(), self.win.winfo_screenheight()]
+        self.customCal = None
         self.saveDir = ''
         self.scale = "5x"
         self.imgName = "sample"
@@ -102,6 +99,8 @@ class MainWindow:
         self.detailLabel.grid(row=3, column=self.columnSpan + 4)
         self.savePathLabel.grid(row=5, column=self.columnSpan, columnspan=4)
 
+        self.customMagBox = tk.Entry(self.win)
+        self.customMagBox.grid(row=1, column=self.columnSpan + 5)
         self.repNumBox = tk.Entry(self.win)
         self.repNumBox.grid(row=4, column=self.columnSpan + 2)
         self.metalSelectBox = ttk.Combobox(self.win, values=["Parent Metal", "Weld Metal", "Coarse HAZ", "Fine HAZ"])
@@ -116,6 +115,7 @@ class MainWindow:
         self.mag3 = ttk.Button(self.win, text="20x", command=self.Mag3)
         self.mag4 = ttk.Button(self.win, text="50x", command=self.Mag4)
         self.mag5 = ttk.Button(self.win, text="100x", command=self.Mag5)
+        self.customButton = ttk.Button(self.win, text="Custom Mag", command=self.CustomMag)
         self.captureButton = ttk.Button(self.win, text="Capture", command=self.CaptureImage)
         self.calibrateButton = ttk.Button(self.win, text=f"Calibrate {self.scale}", command=self.Calibrate)
         self.MeasureButton = ttk.Button(self.win, text="Measure", command=self.Measure)
@@ -126,6 +126,7 @@ class MainWindow:
         self.mag3.grid(row=0, column=self.columnSpan + 2)
         self.mag4.grid(row=0, column=self.columnSpan + 3)
         self.mag5.grid(row=0, column=self.columnSpan + 4)
+        self.customButton.grid(row=0, column=self.columnSpan + 5)
         self.captureButton.grid(row=1, column=self.columnSpan + 4)
         self.calibrateButton.grid(row=1, column=self.columnSpan + 3)
         self.MeasureButton.grid(row=1, column=self.columnSpan + 2)
@@ -171,9 +172,34 @@ class MainWindow:
             self.knownDistLabel.destroy()
         self.calibrateButton.configure(text=f"Calibrate {self.scale}")
 
+    def CustomMag(self):
+        try:
+            custMag = int(self.customMagBox.get())
+            self.scale = f"{custMag}x"
+            self.magLabel.configure(text=self.scale)
+            self.calibrations[self.scale] = 5/custMag
+
+            if not (self.knownDistForm is None):
+                self.knownDistForm.destroy()
+                self.knownDistLabel.destroy()
+            self.calibrateButton.configure(text=f"Calibrate {self.scale}")
+        except Exception as e:
+            print (e)
+
+    def UpdateSavePath(self, path):
+        n = 30
+        spot = 0
+        newPath = ""
+        for i, substring in enumerate(path.split("/")):
+            if len(newPath) > n+spot:
+                newPath += "\n"
+                spot = len(newPath)
+            newPath += substring + "/"
+        self.saveDir = path
+        self.savePathLabel.configure(text=f"Save Directory: \n {newPath}")
+
     def FileDialog(self):
-        self.saveDir = filedialog.askdirectory()
-        self.savePathLabel.configure(text=f"Save Directory: \n {self.saveDir}")
+        self.UpdateSavePath(filedialog.askdirectory())
 
     def getLinePixDist(self):
         return round(math.sqrt((self.point2[0] - self.point1[0]) * (self.point2[0] - self.point1[0]) + (
@@ -243,6 +269,11 @@ class MainWindow:
 
     def onRightClick(self, event):
         self.showLine = False
+        if not self.refresh:
+            self.refresh = True
+            self.captureButton.configure(text="Capture")
+            self.show_frames()
+            return
 
     def onMouseDrag(self, event):
         if not ((self.imageBounds[0] < event.x < self.imageBounds[2]) and (
@@ -269,7 +300,7 @@ class MainWindow:
                 savePath = f"{self.saveDir}/R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
                 if savePath[-5] == '-':
                     savePath = savePath[0:-5] + ".jpg"
-                self.savePathLabel.configure(text=f"Saved to: \n {savePath}")
+                self.UpdateSavePath(savePath)
                 self.img.save(savePath)
             except Exception as e:
                 self.savePathLabel.configure(f"Error saving file \n{e}")
@@ -300,25 +331,23 @@ class MainWindow:
 
     def show_frames(self):
 
-        mag2scaleDist = {
-            "5x": 500,
-            "10x": 200,
-            "20x": 100,
-            "50x": 20,
-            "100x": 20,
-        }
+        mag2scaleDist = {"5x": 500, "10x": 200, "20x": 100, "50x": 20, "100x": 20}
+        if self.scale not in mag2scaleDist:
+            mag2scaleDist[self.scale] = 50
+        scaleMult = 150*self.calibrations[self.scale]/mag2scaleDist[self.scale]
         # Get the latest frame and convert into Image
         cv2image = cv2.cvtColor(self.cap.read()[1], cv2.COLOR_BGR2RGB)
-        self.img = Image.fromarray(cv2image).resize((1000, 800))
-        scaleImgArray = np.ones((20, round(mag2scaleDist[self.scale] / self.calibrations[self.scale]), 3),
-                                np.uint8) * 255
+        self.img = Image.fromarray(cv2image).resize((int(self.screenShape[0]/2), 3*int(self.screenShape[1]/4)))
+        scaleLength = round(scaleMult*mag2scaleDist[self.scale] / self.calibrations[self.scale])
+
+        scaleImgArray = np.ones((20, scaleLength, 3), np.uint8) * 255
         scaleImgArray[:, 0:2] = 0
         scaleImgArray[:, -3:-1] = 0
         self.scaleImage = Image.fromarray(scaleImgArray)
 
         ImageDraw.Draw(self.scaleImage).text(
-            (round(mag2scaleDist[self.scale] / self.calibrations[self.scale] / 2 - 50), 5),
-            f"{str(mag2scaleDist[self.scale])} Micrometers", (0, 0, 0))
+            (round(scaleLength / 2 - 50), 5),
+            f"{str(round(scaleMult*mag2scaleDist[self.scale]))} Micrometers", (0, 0, 0))
 
         w = self.scaleImage.width
         h = self.scaleImage.height
@@ -333,7 +362,7 @@ class MainWindow:
         self.camLabel.configure(image=self.imgtk)
         # Repeat after an interval to capture continiously
         if (self.refresh):
-            self.camLabel.after(20, self.show_frames)
+            self.camLabel.after(10, self.show_frames)
 
 
 def Main():
