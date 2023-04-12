@@ -8,6 +8,7 @@ import sys
 import os
 import enum
 import math
+import time
 
 
 # Create an instance of TKinter Window or frame
@@ -78,6 +79,31 @@ class MainWindow:
         self.magLabel = tk.Label(self.win, text=self.scale)
         self.magLabel.grid(row=self.rowSpan, column=1)
 
+        # Buttons
+        self.buttonWidth = 12
+        
+        self.mag1 = ttk.Button(self.win, text="5x", command=self.Mag1, width = self.buttonWidth)
+        self.mag2 = ttk.Button(self.win, text="10x", command=self.Mag2, width = self.buttonWidth)
+        self.mag3 = ttk.Button(self.win, text="20x", command=self.Mag3, width = self.buttonWidth)
+        self.mag4 = ttk.Button(self.win, text="50x", command=self.Mag4, width = self.buttonWidth)
+        self.mag5 = ttk.Button(self.win, text="100x", command=self.Mag5, width = self.buttonWidth)
+        self.customButton = ttk.Button(self.win, text="Custom Mag", command=self.CustomMag, width = self.buttonWidth)
+        self.captureButton = ttk.Button(self.win, text="Capture", command=self.CaptureImage, width = self.buttonWidth)
+        self.calibrateButton = ttk.Button(self.win, text=f"Calibrate {self.scale}", command=self.Calibrate, width = self.buttonWidth)
+        self.MeasureButton = ttk.Button(self.win, text="Measure", command=self.Measure, width = self.buttonWidth)
+        self.saveToButton = ttk.Button(self.win, text="SaveTo...", command=self.FileDialog, width = self.buttonWidth)
+
+        self.mag1.grid(row=0, column=self.columnSpan)
+        self.mag2.grid(row=0, column=self.columnSpan + 1)
+        self.mag3.grid(row=0, column=self.columnSpan + 2)
+        self.mag4.grid(row=0, column=self.columnSpan + 3)
+        self.mag5.grid(row=0, column=self.columnSpan + 4)
+        self.customButton.grid(row=0, column=self.columnSpan + 5)
+        self.captureButton.grid(row=1, column=self.columnSpan + 4)
+        self.calibrateButton.grid(row=1, column=self.columnSpan + 3)
+        self.MeasureButton.grid(row=1, column=self.columnSpan + 2)
+        self.saveToButton.grid(row=1, column=self.columnSpan + 1)
+
 
         # Create a Label to capture the Video frames add some widgets
         self.refresh = True
@@ -90,47 +116,29 @@ class MainWindow:
         self.cameraDropdown.bind("<<ComboboxSelected>>", self.onCameraChange)
         self.cameraDropdown.grid(row=self.rowSpan, column=0)
 
-        self.repLabel = tk.Label(self.win, text="Rep number")
-        self.metalLabel = tk.Label(self.win, text="Microstructure Region")
-        self.detailLabel = tk.Label(self.win, text="Additional details")
-        self.savePathLabel = tk.Label(self.win, text=f"Saving to:\n{self.CURR_DIR}\\captures")
+        self.repLabel = tk.Label(self.win, text="Rep\nnumber")
+        self.metalLabel = tk.Label(self.win, text="Microstructure\nRegion")
+        self.detailLabel = tk.Label(self.win, text="Additional\ndetails")
+        self.savePathLabel = tk.Label(self.win, text=f"Select a save directory")
         self.repLabel.grid(row=3, column=self.columnSpan + 2)
         self.metalLabel.grid(row=3, column=self.columnSpan + 3)
         self.detailLabel.grid(row=3, column=self.columnSpan + 4)
-        self.savePathLabel.grid(row=5, column=self.columnSpan, columnspan=4)
-
-        self.customMagBox = tk.Entry(self.win)
+        self.savePathLabel.grid(row=5, column=self.columnSpan, columnspan=10)
+        
+        self.fixedScaleBool = tk.BooleanVar()
+        self.fixedScale = tk.Checkbutton(self.win, text = "Fixed Scale", variable=self.fixedScaleBool, onvalue=True, offvalue=False)
+        self.fixedScale.grid(row = 1, column = self.columnSpan)
+        self.customMagBox = tk.Entry(self.win, width = self.buttonWidth)
         self.customMagBox.grid(row=1, column=self.columnSpan + 5)
-        self.repNumBox = tk.Entry(self.win)
+        self.repNumBox = tk.Entry(self.win, width = self.buttonWidth)
         self.repNumBox.grid(row=4, column=self.columnSpan + 2)
-        self.metalSelectBox = ttk.Combobox(self.win, values=["Parent Metal", "Weld Metal", "Coarse HAZ", "Fine HAZ"])
+        self.metalSelectBox = ttk.Combobox(self.win, values=["Parent Metal", "Weld Metal", "Coarse HAZ", "Fine HAZ"], width = self.buttonWidth)
         self.metalSelectBox.grid(row=4, column=self.columnSpan + 3)
-        self.extraDetailBox = tk.Entry(self.win)
+        self.extraDetailBox = tk.Entry(self.win, width = self.buttonWidth)
         self.extraDetailBox.grid(row=4, column=self.columnSpan + 4)
         self.cap = cv2.VideoCapture(0)
 
-        # Buttons
-        self.mag1 = ttk.Button(self.win, text="5x", command=self.Mag1)
-        self.mag2 = ttk.Button(self.win, text="10x", command=self.Mag2)
-        self.mag3 = ttk.Button(self.win, text="20x", command=self.Mag3)
-        self.mag4 = ttk.Button(self.win, text="50x", command=self.Mag4)
-        self.mag5 = ttk.Button(self.win, text="100x", command=self.Mag5)
-        self.customButton = ttk.Button(self.win, text="Custom Mag", command=self.CustomMag)
-        self.captureButton = ttk.Button(self.win, text="Capture", command=self.CaptureImage)
-        self.calibrateButton = ttk.Button(self.win, text=f"Calibrate {self.scale}", command=self.Calibrate)
-        self.MeasureButton = ttk.Button(self.win, text="Measure", command=self.Measure)
-        self.saveToButton = ttk.Button(self.win, text="SaveTo...", command=self.FileDialog)
 
-        self.mag1.grid(row=0, column=self.columnSpan)
-        self.mag2.grid(row=0, column=self.columnSpan + 1)
-        self.mag3.grid(row=0, column=self.columnSpan + 2)
-        self.mag4.grid(row=0, column=self.columnSpan + 3)
-        self.mag5.grid(row=0, column=self.columnSpan + 4)
-        self.customButton.grid(row=0, column=self.columnSpan + 5)
-        self.captureButton.grid(row=1, column=self.columnSpan + 4)
-        self.calibrateButton.grid(row=1, column=self.columnSpan + 3)
-        self.MeasureButton.grid(row=1, column=self.columnSpan + 2)
-        self.saveToButton.grid(row=1, column=self.columnSpan + 1)
 
     def Mag1(self):
         self.scale = "5x"
@@ -194,7 +202,7 @@ class MainWindow:
             if len(newPath) > n+spot:
                 newPath += "\n"
                 spot = len(newPath)
-            newPath += substring + "/"
+            newPath += substring + "\\"
         self.saveDir = path
         self.savePathLabel.configure(text=f"Save Directory: \n {newPath}")
 
@@ -231,9 +239,12 @@ class MainWindow:
             self.calibrateButton.configure(text=f"Calibrate {self.scale}")
 
     def save_calibration(self):
-        with open(f"{self.CURR_DIR}\\cals", 'w') as cal_file:
-            for cal in self.calibrations:
-                cal_file.write(f"{cal}={self.calibrations[cal]}\n")
+        try:
+            with open(f"{self.CURR_DIR}\\cals", 'w') as cal_file:
+                for cal in self.calibrations:
+                    cal_file.write(f"{cal}={self.calibrations[cal]}\n")
+        except Exception as e:
+            self.distLabel.configure(text = f"Error saving cals:\n {e}")
 
     def Measure(self):
         if not (self.state == State.measuring):
@@ -300,7 +311,7 @@ class MainWindow:
                 savePath = f"{self.saveDir}/R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
                 if savePath[-5] == '-':
                     savePath = savePath[0:-5] + ".jpg"
-                self.UpdateSavePath(savePath)
+                self.UpdateSavePath("\\".join(savePath.replace("/","\\").split("\\")[0:-1]))
                 self.img.save(savePath)
             except Exception as e:
                 self.savePathLabel.configure(f"Error saving file \n{e}")
@@ -320,7 +331,10 @@ class MainWindow:
         index = 0
         arr = []
         i = 10
-        while i > 0:
+        delay = 10
+        time_init = time.time()
+       
+        while ((i > 0) or (time.time()-time_init > delay)):
             cap = cv2.VideoCapture(index)
             if cap.read()[0]:
                 arr.append(f"Port {index}")
@@ -338,6 +352,8 @@ class MainWindow:
         # Get the latest frame and convert into Image
         cv2image = cv2.cvtColor(self.cap.read()[1], cv2.COLOR_BGR2RGB)
         self.img = Image.fromarray(cv2image).resize((int(self.screenShape[0]/2), 3*int(self.screenShape[1]/4)))
+        if self.fixedScaleBool.get() == False:
+            scaleMult = 1
         scaleLength = round(scaleMult*mag2scaleDist[self.scale] / self.calibrations[self.scale])
 
         scaleImgArray = np.ones((20, scaleLength, 3), np.uint8) * 255
