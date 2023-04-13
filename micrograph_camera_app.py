@@ -334,7 +334,7 @@ class MainWindow:
         delay = 10
         time_init = time.time()
        
-        while ((i > 0) or (time.time()-time_init > delay)):
+        while ((i > 0)):
             cap = cv2.VideoCapture(index)
             if cap.read()[0]:
                 arr.append(f"Port {index}")
