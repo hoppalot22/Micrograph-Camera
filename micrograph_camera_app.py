@@ -245,6 +245,7 @@ class MainWindow:
                     cal_file.write(f"{cal}={self.calibrations[cal]}\n")
         except Exception as e:
             self.distLabel.configure(text = f"Error saving cals:\n {e}")
+            print(e)
 
     def Measure(self):
         if not (self.state == State.measuring):
@@ -297,31 +298,41 @@ class MainWindow:
 
     def CaptureImage(self):
 
+        if self.saveDir == '':
+            self.savePathLabel.configure(text="Please choose a save directory before capturing image")
+            return
+            
+        self.refresh = False
+        self.captureButton.configure(text="Confirm", command = self.ConfirmImage)
+
+    def ConfirmImage(self):
         metalAbbreviations = {
             "Weld Metal": "WM",
             "Parent Metal": "PM",
             "Coarse HAZ": "CGHAZ",
             "Fine HAZ": "FGHAZ"
         }
-        if self.saveDir == '':
-            self.savePathLabel.configure(text="Please choose a save directory before capturing image")
-            return
-        if not self.refresh:
-            try:
-                savePath = f"{self.saveDir}/R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
-                if savePath[-5] == '-':
-                    savePath = savePath[0:-5] + ".jpg"
+        try:
+            savePath = f"{self.saveDir}/R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
+            if savePath[-5] == '-':
+                savePath = savePath[0:-5] + ".jpg"
+            
+            if os.path.isfile(savePath):
+                if tk.messagebox.askyesno(title = "Overwrite?", message = "Filename already exists, would you like to overwrite?"):
+                    self.UpdateSavePath("\\".join(savePath.replace("/","\\").split("\\")[0:-1]))
+                    self.img.save(savePath)
+            
+            else:
                 self.UpdateSavePath("\\".join(savePath.replace("/","\\").split("\\")[0:-1]))
                 self.img.save(savePath)
-            except Exception as e:
-                self.savePathLabel.configure(f"Error saving file \n{e}")
+            
+        except Exception as e:
+            self.savePathLabel.configure(f"Error saving file \n{e}")
+            print(e)
 
-            self.captureButton.configure(text="Capture")
-            self.refresh = True
-            self.show_frames()
-        else:
-            self.refresh = False
-            self.captureButton.configure(text="Confirm")
+        self.captureButton.configure(text="Capture", command = self.CaptureImage)
+        self.refresh = True
+        self.show_frames()
 
     def onCameraChange(self, event):
         self.cap = cv2.VideoCapture(int(self.cameraDropdown.get().split()[-1]))
