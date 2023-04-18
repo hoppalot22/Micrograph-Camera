@@ -11,6 +11,9 @@ import math
 import time
 
 
+#TODO
+#Implement on screen measurements for images.
+
 # Create an instance of TKinter Window or frame
 
 class State(enum.Enum):
@@ -92,6 +95,7 @@ class MainWindow:
         self.calibrateButton = ttk.Button(self.win, text=f"Calibrate {self.scale}", command=self.Calibrate, width = self.buttonWidth)
         self.MeasureButton = ttk.Button(self.win, text="Measure", command=self.Measure, width = self.buttonWidth)
         self.saveToButton = ttk.Button(self.win, text="SaveTo...", command=self.FileDialog, width = self.buttonWidth)
+        self.retryCamButton = ttk.Button(self.win, text = "Retry Camera", command = self.retryCam)
 
         self.mag1.grid(row=0, column=self.columnSpan)
         self.mag2.grid(row=0, column=self.columnSpan + 1)
@@ -103,6 +107,7 @@ class MainWindow:
         self.calibrateButton.grid(row=1, column=self.columnSpan + 3)
         self.MeasureButton.grid(row=1, column=self.columnSpan + 2)
         self.saveToButton.grid(row=1, column=self.columnSpan + 1)
+        self.retryCamButton.grid(row = 3, column = self.columnSpan)
 
 
         # Create a Label to capture the Video frames add some widgets
@@ -113,6 +118,7 @@ class MainWindow:
         self.distLabel.grid(row=self.rowSpan, column=2)
         self.cameras = self.returnCameraIndexes()
         self.cameraDropdown = ttk.Combobox(self.win, values=self.cameras)
+        self.cameraDropdown.current(0)
         self.cameraDropdown.bind("<<ComboboxSelected>>", self.onCameraChange)
         self.cameraDropdown.grid(row=self.rowSpan, column=0)
 
@@ -288,7 +294,7 @@ class MainWindow:
             return
 
     def onMouseDrag(self, event):
-        if not ((self.imageBounds[0] < event.x < self.imageBounds[2]) and (
+        if not ((r".!label2" in str(event.widget)) and(self.imageBounds[0] < event.x < self.imageBounds[2]) and (
                 self.imageBounds[1] < event.y < self.imageBounds[3])):
             return
         if self.state == State.measuring or self.state == State.calibrating:
@@ -313,7 +319,10 @@ class MainWindow:
             "Fine HAZ": "FGHAZ"
         }
         try:
-            savePath = f"{self.saveDir}/R{str(self.repNumBox.get())} {metalAbbreviations[str(self.metalSelectBox.get())]}-{str(self.extraDetailBox.get().strip())}.jpg"
+            repString = str(self.repNumBox.get()).replace('/','\\').replace('\\','')
+            metalString = str(metalAbbreviations[str(self.metalSelectBox.get().replace('/','\\').replace('\\',''))])
+            detailString = str(self.extraDetailBox.get().strip().replace('/','\\').replace('\\',''))
+            savePath = f"{self.saveDir}/R{repString} {metalString}-{detailString}.jpg"
             if savePath[-5] == '-':
                 savePath = savePath[0:-5] + ".jpg"
             
@@ -335,7 +344,18 @@ class MainWindow:
         self.show_frames()
 
     def onCameraChange(self, event):
+        self.cap.release()
         self.cap = cv2.VideoCapture(int(self.cameraDropdown.get().split()[-1]))
+
+    def retryCam(self):    
+        self.cap.release()
+        self.cameras = self.returnCameraIndexes()
+        self.cameraDropdown.configure(values=self.cameras)
+        self.cameraDropdown.current(0)
+        self.cap = cv2.VideoCapture(int(self.cameraDropdown.get().split()[-1]))
+        if not self.refresh:
+            self.refresh = True
+            self.camLabel.after(10, self.show_frames)
 
     def returnCameraIndexes(self):
         # checks the first 10 indexes.
@@ -346,22 +366,29 @@ class MainWindow:
         time_init = time.time()
        
         while ((i > 0)):
-            cap = cv2.VideoCapture(index)
+            cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
             if cap.read()[0]:
                 arr.append(f"Port {index}")
-                cap.release()
+            cap.release()
             index += 1
             i -= 1
         return arr
 
     def show_frames(self):
 
-        mag2scaleDist = {"5x": 500, "10x": 200, "20x": 100, "50x": 20, "100x": 20}
+        mag2scaleDist = {"5x": 500, "10x": 200, "20x": 100, "50x": 40, "100x": 20}
         if self.scale not in mag2scaleDist:
             mag2scaleDist[self.scale] = 50
         scaleMult = 150*self.calibrations[self.scale]/mag2scaleDist[self.scale]
         # Get the latest frame and convert into Image
-        cv2image = cv2.cvtColor(self.cap.read()[1], cv2.COLOR_BGR2RGB)
+        try:
+            cv2image = cv2.cvtColor(self.cap.read()[1], cv2.COLOR_BGR2RGB)
+        except Exception as e:
+            if (tk.messagebox.askretrycancel(title = "Video Capture Error", message = f"Following error occured while trying to access camera\n{e}\n Try reconnecting the camera and clicking retry.")):
+                self.retryCam()
+            else:
+                self.refresh = False
+            return
         self.img = Image.fromarray(cv2image).resize((int(self.screenShape[0]/2), 3*int(self.screenShape[1]/4)))
         if self.fixedScaleBool.get() == False:
             scaleMult = 1
