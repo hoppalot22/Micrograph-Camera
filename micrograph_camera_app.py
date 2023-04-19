@@ -81,6 +81,17 @@ class MainWindow:
         self.scaleImage = (np.ones((20, 160, 3), np.uint8) * 255)
         self.magLabel = tk.Label(self.win, text=self.scale)
         self.magLabel.grid(row=self.rowSpan, column=1)
+        self.cameraModels = {0: "Mulgrave Leica DM750M",
+                             1: "Zeiss Axiovert 100 A",
+                             2: "Mulgrave Nikon MA100"}
+                             
+        self.modelAreasAt50x = {
+            self.cameraModels[2] : .03901*1000000,
+            self.cameraModels[1] : .03803*1000000,
+            self.cameraModels[0] : 0.04*1000000
+        }
+        self.pointArray = []
+
 
         # Buttons
         self.buttonWidth = 12
@@ -121,6 +132,10 @@ class MainWindow:
         self.cameraDropdown.current(0)
         self.cameraDropdown.bind("<<ComboboxSelected>>", self.onCameraChange)
         self.cameraDropdown.grid(row=self.rowSpan, column=0)
+        self.cameraModelDropdown = ttk.Combobox(self.win, values = [self.cameraModels[x] for x in self.cameraModels], width = self.buttonWidth)
+        self.cameraModelDropdown.current(0)
+        self.cameraModelDropdown.bind("<<ComboboxSelected>>", self.onModelChange)
+        self.cameraModelDropdown.grid(row=2, column=self.columnSpan)
 
         self.repLabel = tk.Label(self.win, text="Rep\nnumber")
         self.metalLabel = tk.Label(self.win, text="Microstructure\nRegion")
@@ -131,6 +146,13 @@ class MainWindow:
         self.detailLabel.grid(row=3, column=self.columnSpan + 4)
         self.savePathLabel.grid(row=5, column=self.columnSpan, columnspan=10)
         
+        self.boxOverlayBool = tk.BooleanVar()
+        self.boxOverlayArea = self.modelAreasAt50x[self.cameraModels[0]]
+        self.boxOverlaySideLength = int(math.sqrt(self.boxOverlayArea))
+        self.boxOverlay = tk.Checkbutton(self.win, text = "Box Overlay", variable = self.boxOverlayBool, onvalue = True, offvalue = False)
+        self.boxOverlay.grid(row = 2, column = self.columnSpan+1)
+        self.boxOverlayLabel = tk.Label(self.win, text = f"Box overlay represents {self.boxOverlaySideLength} Micron x {self.boxOverlaySideLength} Micron Area")
+        self.boxOverlayLabel.grid(row = 2, column = self.columnSpan + 2, columnspan = 10)
         self.fixedScaleBool = tk.BooleanVar()
         self.fixedScale = tk.Checkbutton(self.win, text = "Fixed Scale", variable=self.fixedScaleBool, onvalue=True, offvalue=False)
         self.fixedScale.grid(row = 1, column = self.columnSpan)
@@ -191,7 +213,8 @@ class MainWindow:
             custMag = int(self.customMagBox.get())
             self.scale = f"{custMag}x"
             self.magLabel.configure(text=self.scale)
-            self.calibrations[self.scale] = 5/custMag
+            if not self.scale in self.calibrations:
+                self.calibrations[self.scale] = 5/custMag
 
             if not (self.knownDistForm is None):
                 self.knownDistForm.destroy()
@@ -343,6 +366,12 @@ class MainWindow:
         self.refresh = True
         self.show_frames()
 
+    def onModelChange(self,event):
+
+        self.boxOverlayArea = self.modelAreasAt50x[str(self.cameraModelDropdown.get())]
+        self.boxOverlaySideLength = math.sqrt(self.boxOverlayArea)
+        self.boxOverlayLabel.configure(text = f"Box overlay represents {self.boxOverlaySideLength} Micron x {self.boxOverlaySideLength} Micron Area")
+
     def onCameraChange(self, event):
         self.cap.release()
         self.cap = cv2.VideoCapture(int(self.cameraDropdown.get().split()[-1]))
@@ -406,10 +435,17 @@ class MainWindow:
         w = self.scaleImage.width
         h = self.scaleImage.height
 
+        if self.boxOverlayBool.get():
+            topLeft = (int(self.img.width/2-self.boxOverlaySideLength/self.calibrations[self.scale]/2), int(self.img.height/2-self.boxOverlaySideLength/self.calibrations[self.scale]/2))
+            bottomRight = (int(self.img.width/2+self.boxOverlaySideLength/self.calibrations[self.scale]/2), int(self.img.height/2+self.boxOverlaySideLength/self.calibrations[self.scale]/2))
+            ImageDraw.Draw(self.img).rectangle([(topLeft),(bottomRight)], width = 1, fill = None, outline = 0)
+
+
         self.img.paste(self.scaleImage, (self.img.width - w, self.img.height - h))
 
         if self.showLine:
             ImageDraw.Draw(self.img).line([self.point1, self.point2], fill=0, width=5)
+
 
         # Convert image to PhotoImage
         self.imgtk = ImageTk.PhotoImage(image=self.img)
