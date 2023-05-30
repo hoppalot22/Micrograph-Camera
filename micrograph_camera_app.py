@@ -67,6 +67,7 @@ class MainWindow:
         self.win.bind("<ButtonRelease-1>", self.onLeftClickRelease)
 
         # Create "Global" variables
+        self.cap = None
         self.screenShape = [self.win.winfo_screenwidth(), self.win.winfo_screenheight()]
         self.customCal = None
         self.saveDir = ''
@@ -164,7 +165,8 @@ class MainWindow:
         self.metalSelectBox.grid(row=4, column=self.columnSpan + 3)
         self.extraDetailBox = tk.Entry(self.win, width = self.buttonWidth)
         self.extraDetailBox.grid(row=4, column=self.columnSpan + 4)
-        self.cap = cv2.VideoCapture(0)
+        self.setCap(0)
+
 
 
 
@@ -239,10 +241,12 @@ class MainWindow:
         self.UpdateSavePath(filedialog.askdirectory())
 
     def getLinePixDist(self):
+        
         return round(math.sqrt((self.point2[0] - self.point1[0]) * (self.point2[0] - self.point1[0]) + (
                     self.point2[1] - self.point1[1]) * (self.point2[1] - self.point1[1])))
 
     def Calibrate(self):
+    
         if not (self.state == State.calibrating):
             self.state = State.calibrating
             self.calibrateButton.configure(text="Finish")
@@ -299,8 +303,8 @@ class MainWindow:
             return
 
         if self.state == State.measuring or self.state == State.calibrating:
-            self.point1 = (event.x, event.y)
-            self.point2 = (event.x, event.y)
+            self.point1 = (int(event.x/self.lineDist2actual), int(event.y/self.lineDist2actual))
+            self.point2 = (int(event.x/self.lineDist2actual), int(event.y/self.lineDist2actual))
             self.showLine = True
 
     def onLeftClickRelease(self, event):
@@ -310,6 +314,8 @@ class MainWindow:
 
     def onRightClick(self, event):
         self.showLine = False
+        if (time.time() - self.frameTime > 1) and (self.refresh):
+            self.show_frames()
         if not self.refresh:
             self.refresh = True
             self.captureButton.configure(text="Capture")
@@ -321,7 +327,7 @@ class MainWindow:
                 self.imageBounds[1] < event.y < self.imageBounds[3])):
             return
         if self.state == State.measuring or self.state == State.calibrating:
-            self.point2 = (event.x, event.y)
+            self.point2 = (int(event.x/self.lineDist2actual), int(event.y/self.lineDist2actual))
 
     # Define function to show frame
 
@@ -372,16 +378,29 @@ class MainWindow:
         self.boxOverlaySideLength = math.sqrt(self.boxOverlayArea)
         self.boxOverlayLabel.configure(text = f"Box overlay represents {self.boxOverlaySideLength} Micron x {self.boxOverlaySideLength} Micron Area")
 
+
+    def setCap(self, capInt):
+
+        if self.cap is not None:
+            self.cap.release()
+        self.cap = cv2.VideoCapture(capInt, cv2.CAP_DSHOW)
+        self.cameraWidth = 1600
+        self.cameraHeight = 1200
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cameraWidth)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT,self.cameraHeight)
+        self.cameraWidth  = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        self.cameraHeight = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) 
+        self.lineDist2actual = self.screenShape[0]/2/self.cameraWidth
+
     def onCameraChange(self, event):
-        self.cap.release()
-        self.cap = cv2.VideoCapture(int(self.cameraDropdown.get().split()[-1]))
+        self.setCap(int(self.cameraDropdown.get().split()[-1]))
+
 
     def retryCam(self):    
-        self.cap.release()
-        self.cameras = self.returnCameraIndexes()
-        self.cameraDropdown.configure(values=self.cameras)
-        self.cameraDropdown.current(0)
-        self.cap = cv2.VideoCapture(int(self.cameraDropdown.get().split()[-1]))
+        #self.cameras = self.returnCameraIndexes()
+        #self.cameraDropdown.configure(values=self.cameras)
+        #self.cameraDropdown.current(0)
+        self.setCap(int(self.cameraDropdown.get().split()[-1]))
         if not self.refresh:
             self.refresh = True
             self.camLabel.after(10, self.show_frames)
@@ -391,8 +410,8 @@ class MainWindow:
         index = 0
         arr = []
         i = 10
-        delay = 10
-        time_init = time.time()
+        if(self.cap is not None):
+            self.cap.release()
        
         while ((i > 0)):
             cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
@@ -404,51 +423,66 @@ class MainWindow:
         return arr
 
     def show_frames(self):
+    
+        self.frameTime = time.time()
 
-        mag2scaleDist = {"5x": 500, "10x": 200, "20x": 100, "50x": 40, "100x": 20}
+        mag2scaleDist = {"5x": 1000, "10x": 400, "20x": 200, "50x": 100, "100x": 50}
         if self.scale not in mag2scaleDist:
             mag2scaleDist[self.scale] = 50
-        scaleMult = 150*self.calibrations[self.scale]/mag2scaleDist[self.scale]
+        scaleMult = 300*self.calibrations[self.scale]/mag2scaleDist[self.scale]
         # Get the latest frame and convert into Image
         try:
             cv2image = cv2.cvtColor(self.cap.read()[1], cv2.COLOR_BGR2RGB)
+            #print (np.shape(cv2image))
         except Exception as e:
             if (tk.messagebox.askretrycancel(title = "Video Capture Error", message = f"Following error occured while trying to access camera\n{e}\n Try reconnecting the camera and clicking retry.")):
                 self.retryCam()
             else:
                 self.refresh = False
             return
-        self.img = Image.fromarray(cv2image).resize((int(self.screenShape[0]/2), 3*int(self.screenShape[1]/4)))
+        self.img = Image.fromarray(cv2image)
         if self.fixedScaleBool.get() == False:
             scaleMult = 1
         scaleLength = round(scaleMult*mag2scaleDist[self.scale] / self.calibrations[self.scale])
 
-        scaleImgArray = np.ones((20, scaleLength, 3), np.uint8) * 255
-        scaleImgArray[:, 0:2] = 0
-        scaleImgArray[:, -3:-1] = 0
+        scaleImgArray = np.ones((40, scaleLength + 20, 3), np.uint8) * 255
+        scaleImgArray[4:20, 10:12] = 0
+        scaleImgArray[11:14, 10:-10] = 0
+        scaleImgArray[4:20, -12:-10] = 0
         self.scaleImage = Image.fromarray(scaleImgArray)
 
-        ImageDraw.Draw(self.scaleImage).text(
-            (round(scaleLength / 2 - 50), 5),
-            f"{str(round(scaleMult*mag2scaleDist[self.scale]))} Micrometers", (0, 0, 0))
+        myFont = ImageFont.truetype("arial.ttf", 20)
+        message = f"{str(round(scaleMult*mag2scaleDist[self.scale]))} µm"
+        
+        W = self.scaleImage.width
+        H = self.scaleImage.height
+        
+        draw = ImageDraw.Draw(self.scaleImage)
+        _, _, w, h = draw.textbbox((0, 0), message, font=myFont)
+        
+        #print(W,H,w,h,message)
+        
+        draw.text(
+            (round((W-w)/2), round((H-h)/2)+8),
+            message,(0,0,0), font = myFont)
 
-        w = self.scaleImage.width
-        h = self.scaleImage.height
+
 
         if self.boxOverlayBool.get():
             topLeft = (int(self.img.width/2-self.boxOverlaySideLength/self.calibrations[self.scale]/2), int(self.img.height/2-self.boxOverlaySideLength/self.calibrations[self.scale]/2))
             bottomRight = (int(self.img.width/2+self.boxOverlaySideLength/self.calibrations[self.scale]/2), int(self.img.height/2+self.boxOverlaySideLength/self.calibrations[self.scale]/2))
             ImageDraw.Draw(self.img).rectangle([(topLeft),(bottomRight)], width = 1, fill = None, outline = 0)
 
-
-        self.img.paste(self.scaleImage, (self.img.width - w, self.img.height - h))
+        
+        self.img.paste(self.scaleImage, (self.img.width - W - 20, self.img.height - H - 10))
 
         if self.showLine:
             ImageDraw.Draw(self.img).line([self.point1, self.point2], fill=0, width=5)
 
 
         # Convert image to PhotoImage
-        self.imgtk = ImageTk.PhotoImage(image=self.img)
+        self.imgtk = ImageTk.PhotoImage(image=self.img.resize((int(self.screenShape[0]/2), int(self.screenShape[0]/2*self.cameraHeight/self.cameraWidth))))
+        #print (np.shape(self.imgtk))
         self.camLabel.configure(image=self.imgtk)
         # Repeat after an interval to capture continiously
         if (self.refresh):
