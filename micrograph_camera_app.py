@@ -351,7 +351,7 @@ class MainWindow:
             repString = str(self.repNumBox.get()).replace('/','\\').replace('\\','')
             metalString = str(metalAbbreviations[str(self.metalSelectBox.get().replace('/','\\').replace('\\',''))])
             detailString = str(self.extraDetailBox.get().strip().replace('/','\\').replace('\\',''))
-            savePath = f"{self.saveDir}/R{repString} {metalString}-{detailString}.jpg"
+            savePath = f"{self.saveDir}/R{repString}-{metalString}-{detailString}-{self.scale}.jpg".replace("--","-")
             if savePath[-5] == '-':
                 savePath = savePath[0:-5] + ".jpg"
             
@@ -376,7 +376,7 @@ class MainWindow:
 
         self.boxOverlayArea = self.modelAreasAt50x[str(self.cameraModelDropdown.get())]
         self.boxOverlaySideLength = math.sqrt(self.boxOverlayArea)
-        self.boxOverlayLabel.configure(text = f"Box overlay represents {self.boxOverlaySideLength} Micron x {self.boxOverlaySideLength} Micron Area")
+        self.boxOverlayLabel.configure(text = f"Box overlay represents {round(self.boxOverlaySideLength,2)} Micron x {round(self.boxOverlaySideLength,2)} Micron Area")
 
 
     def setCap(self, capInt):
